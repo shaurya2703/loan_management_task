@@ -83,6 +83,7 @@ def apply_loan(request):
         interest_rate = float(data['interest_rate'])
         term_period = int(data['term_period'])
         monthly_income = user.annual_income / 12
+        monthly_interest_amount = (loan_amount * (interest_rate / 100)) / 12
         print("Calculating emi now")
         emi, error_message = calculate_emi(loan_amount, interest_rate, term_period, monthly_income)
         print(emi)
@@ -114,7 +115,8 @@ def apply_loan(request):
             EMIDetail.objects.create(
                 loan_application=loan_application,
                 date=due_date,
-                amount_due=emi_amount
+                amount_due=emi_amount,
+                interest_for_month = monthly_interest_amount
             )
             due_dates.append({
                 'Date': due_date.isoformat(),
@@ -180,7 +182,7 @@ def make_payment(request):
         if Payment.objects.filter(emi_detail=emi_for_payment).exists():
             return Response({'Error': 'Payment is already made for that date'}, status=400)
         
-
+        print("Creating payment object")
         Payment.objects.create(emi_detail=emi_for_payment, amount_paid=amount)
 
         recalculate_emi(loan_application, amount)

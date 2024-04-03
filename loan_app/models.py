@@ -43,6 +43,7 @@ class EMIDetail(models.Model):
     loan_application = models.ForeignKey(LoanApplication, on_delete=models.CASCADE, related_name='emi_details')
     date = models.DateField()
     amount_due = models.DecimalField(max_digits=10, decimal_places=2)
+    interest_for_month = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     def __str__(self):
         return f"EMI on {self.date} for {self.loan_application.loan_id}"
