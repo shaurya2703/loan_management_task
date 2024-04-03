@@ -33,13 +33,13 @@ def register_user(request):
         annual_income = request.data.get('annual_income')
 
         user = User.objects.create(
-            aadhar_id=aadhar_id,
+            unique_user_id=aadhar_id,
             name=name,
             email_id=email_id,
             annual_income=annual_income
         )
 
-        calculate_credit_score.delay(user.unique_user_id.hex)
+        calculate_credit_score.delay(user.unique_user_id)
 
         return JsonResponse({'unique_user_id': user.unique_user_id}, status=status.HTTP_200_OK)
     except Exception as e:
@@ -50,11 +50,12 @@ def register_user(request):
 def calculate_emi(principal, annual_interest_rate, tenure_months, monthly_income):
     monthly_interest_rate = annual_interest_rate / 12 / 100
     emi = principal * monthly_interest_rate * ((1 + monthly_interest_rate) ** tenure_months) / (((1 + monthly_interest_rate) ** tenure_months) - 1)
-
-    if emi > (monthly_income * 0.6):
-        return None, "EMI exceeds 60% of monthly income"
+    print(f"EMI : {emi}")
+    if emi > (float(monthly_income) * 0.6):
+        return None, f"EMI exceeds 60% of monthly income"
 
     total_interest_payable = emi * tenure_months - principal
+    print(f"Total interest payable: {total_interest_payable}")
     if total_interest_payable <= 10000:
         return None, "Total interest earned must be greater than 10000"
 
@@ -68,7 +69,7 @@ def apply_loan(request):
         user = User.objects.get(unique_user_id=data['unique_user_id'])
         credit_score_obj = CreditScore.objects.get(user=user)
         
-        if credit_score_obj.score < 450:
+        if credit_score_obj.score < 400:
             return Response({'Error': 'Credit score too low.'}, status=status.HTTP_400_BAD_REQUEST)
         
         if user.annual_income < 150000:
@@ -82,8 +83,9 @@ def apply_loan(request):
         interest_rate = float(data['interest_rate'])
         term_period = int(data['term_period'])
         monthly_income = user.annual_income / 12
-
+        print("Calculating emi now")
         emi, error_message = calculate_emi(loan_amount, interest_rate, term_period, monthly_income)
+        print(emi)
         if emi is None:
             return Response({'Error': error_message}, status=status.HTTP_400_BAD_REQUEST)
         
@@ -102,6 +104,7 @@ def apply_loan(request):
         
         due_dates = []
         total_principal_paid = 0
+        emi_amount=emi
         for month in range(term_period):
             due_date = first_due_date + timedelta(days=30 * month)
             if month == term_period - 1:  
@@ -121,7 +124,7 @@ def apply_loan(request):
         
         return Response({
             'Loan_id': loan_application.loan_id.hex,
-            'EMI_Amount': emi,
+            'Due_Dates': due_dates,
             
         }, status=status.HTTP_200_OK)
     except User.DoesNotExist:
@@ -151,13 +154,14 @@ def recalculate_emi(loan_application, payment_amount):
 def make_payment(request):
     loan_id = request.data.get('loan_id')
     amount = float(request.data.get('amount'))
+    date_of_payment = date.fromisoformat(request.data.get('date'))
 
     try:
         loan_application = LoanApplication.objects.get(loan_id=loan_id)
         emis = EMIDetail.objects.filter(loan_application=loan_application).order_by('date')
 
-        total_paid_before = Payment.objects.filter(emi_detail__in=emis, emi_detail__date__lt=date.today()).aggregate(Sum('amount_paid'))['amount_paid__sum'] or 0
-        total_due_before = emis.filter(date__lt=date.today()).aggregate(Sum('amount_due'))['amount_due__sum'] or 0
+        total_paid_before = Payment.objects.filter(emi_detail__in=emis, emi_detail__date__lt=date_of_payment).aggregate(Sum('amount_paid'))['amount_paid__sum'] or 0
+        total_due_before = emis.filter(date__lt=date_of_payment).aggregate(Sum('amount_due'))['amount_due__sum'] or 0
         
         if total_due_before > total_paid_before:
             return Response({'Error': 'Previous EMIs are due'}, status=400)

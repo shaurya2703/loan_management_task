@@ -2,11 +2,11 @@ from django.db import models
 import uuid
 
 class User(models.Model):
-    unique_user_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    unique_user_id = models.CharField(primary_key=True,max_length=20,editable=False, default = uuid.uuid4())
     name = models.CharField(max_length=255)
     email_id = models.EmailField(unique=True)
     annual_income = models.DecimalField(max_digits=15, decimal_places=2)
-    aadhar_id = models.CharField(max_length=12, unique=True)
+
 
     def __str__(self):
         return f"Name : {self.name}, Email : {self.email_id}, Annual Income: {self.annual_income}"

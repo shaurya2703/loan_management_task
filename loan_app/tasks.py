@@ -14,7 +14,7 @@ def calculate_credit_score(user_id):
     user = User.objects.get(pk=user_id)
     
     df = pd.read_csv('/Users/shauryakhanna/Documents/projects/loan_django/loan_management/loan_app/transactions_data.csv')
-    user_df = df[df['user'] == user.aadhar_id]
+    user_df = df[df['user'] == user.unique_user_id]
     credit_debit_sum = user_df.groupby('transaction_type')['amount'].sum().to_dict()
     net_balance = credit_debit_sum.get('CREDIT', 0) - credit_debit_sum.get('DEBIT', 0)
     print(f"net balance: {net_balance}")
