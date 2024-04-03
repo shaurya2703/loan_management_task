@@ -160,8 +160,8 @@ def make_payment(request):
         loan_application = LoanApplication.objects.get(loan_id=loan_id)
         emis = EMIDetail.objects.filter(loan_application=loan_application).order_by('date')
 
-        total_paid_before = Payment.objects.filter(emi_detail__in=emis, emi_detail__date__lt=date_of_payment).aggregate(Sum('amount_paid'))['amount_paid__sum'] or 0
-        total_due_before = emis.filter(date__lt=date_of_payment).aggregate(Sum('amount_due'))['amount_due__sum'] or 0
+        total_paid_before = Payment.objects.filter(emi_detail=emis, payment_date=date_of_payment).aggregate(Sum('amount_paid'))['amount_paid__sum'] or 0
+        total_due_before = emis.filter(date=date_of_payment).aggregate(Sum('amount_due'))['amount_due__sum'] or 0
         
         if total_due_before > total_paid_before:
             return Response({'Error': 'Previous EMIs are due'}, status=400)
@@ -169,7 +169,7 @@ def make_payment(request):
 
         emi_for_payment = None
         for emi in emis:
-            if emi.date >= date.today():
+            if emi.date >= date_of_payment:
                 emi_for_payment = emi
                 break
 
