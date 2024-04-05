@@ -52,7 +52,7 @@ class EMIDetail(models.Model):
 class Payment(models.Model):
     emi_detail = models.ForeignKey(EMIDetail, on_delete=models.CASCADE, related_name='payments')
     amount_paid = models.DecimalField(max_digits=10, decimal_places=2)
-    payment_date = models.DateField(auto_now_add=True)
+    payment_date = models.DateField()
 
     def __str__(self):
         return f"Payment of {self.amount_paid} on {self.payment_date} for {self.emi_detail}"

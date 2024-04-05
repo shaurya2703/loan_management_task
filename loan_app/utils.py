@@ -1,4 +1,7 @@
-
+from django.db.models import Sum
+from .models import Payment
+from decimal import Decimal
+from datetime import date
 
 def calculate_emi(principal, annual_interest_rate, tenure_months, monthly_income):
     monthly_interest_rate = annual_interest_rate / 12 / 100
@@ -16,16 +19,20 @@ def calculate_emi(principal, annual_interest_rate, tenure_months, monthly_income
 
 
 
-def recalculate_emi(loan_application, payment_amount):
+def recalculate_emi(loan_application, payment_date):
 
-    total_paid_so_far = sum(payment.amount_paid for payment in loan_application.emi_details.payments.all()) + payment_amount
-    new_principal = loan_application.loan_amount - total_paid_so_far
-    
-    original_tenure_months = loan_application.term_period
-    payments_made = loan_application.emi_details.payments.count()
-    remaining_tenure= original_tenure_months - payments_made
-    monthly_income = loan_application.user.annual_income / 12
-    
-    new_emi, error_message = calculate_emi(new_principal, loan_application.annual_interest_rate, remaining_tenure, monthly_income)
+    total_paid_so_far = Payment.objects.filter(emi_detail__loan_application=loan_application).aggregate(total=Sum('amount_paid'))['total'] or Decimal(0.0)
+    remaining_principal = loan_application.loan_amount - total_paid_so_far
+
+    remaining_payments = loan_application.emi_details.exclude(payments__payment_date__lte=payment_date).count()
+
+    if remaining_payments == 0:
+        return None, "Loan is fully paid off"
+
+    new_emi, error_message = calculate_emi(remaining_principal, loan_application.interest_rate, remaining_payments, loan_application.user.annual_income / 12)
+    if new_emi is not None:
+        for emi_detail in loan_application.emi_details.exclude(payments__payment_date__lte=date.today()):
+            emi_detail.amount_due = new_emi
+            emi_detail.save()
 
     return new_emi, error_message
