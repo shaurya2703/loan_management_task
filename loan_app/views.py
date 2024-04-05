@@ -9,6 +9,7 @@ from .tasks import calculate_credit_score
 from datetime import date,timedelta
 
 from .tasks import test_func
+from .utils import calculate_emi,recalculate_emi
 
 # Create your views here.
 
@@ -47,19 +48,7 @@ def register_user(request):
 
 
 
-def calculate_emi(principal, annual_interest_rate, tenure_months, monthly_income):
-    monthly_interest_rate = annual_interest_rate / 12 / 100
-    emi = principal * monthly_interest_rate * ((1 + monthly_interest_rate) ** tenure_months) / (((1 + monthly_interest_rate) ** tenure_months) - 1)
-    print(f"EMI : {emi}")
-    if emi > (float(monthly_income) * 0.6):
-        return None, f"EMI exceeds 60% of monthly income"
 
-    total_interest_payable = emi * tenure_months - principal
-    print(f"Total interest payable: {total_interest_payable}")
-    if total_interest_payable <= 10000:
-        return None, "Total interest earned must be greater than 10000"
-
-    return emi, None
 
 
 @api_view(['POST'])
@@ -85,14 +74,23 @@ def apply_loan(request):
         monthly_income = user.annual_income / 12
         monthly_interest_amount = (loan_amount * (interest_rate / 100)) / 12
         print("Calculating emi now")
-        emi, error_message = calculate_emi(loan_amount, interest_rate, term_period, monthly_income)
-        print(emi)
-        if emi is None:
+        emi_amount, error_message = calculate_emi(loan_amount, interest_rate, term_period, monthly_income)
+        print(emi_amount)
+        if emi_amount is None:
             return Response({'Error': error_message}, status=status.HTTP_400_BAD_REQUEST)
         
         disbursement_date = date.fromisoformat(data['disbursement_date'])
-        first_due_date = disbursement_date.replace(day=1) + timedelta(days=32)
+        first_due_date = disbursement_date + timedelta(days=30)
         first_due_date = first_due_date.replace(day=1)
+
+        emi_amount, error_message = calculate_emi(loan_amount, interest_rate, term_period, monthly_income)
+        if emi_amount is None:
+            return Response({'Error': error_message}, status=status.HTTP_400_BAD_REQUEST)
+        
+        total_payment_expected = emi_amount * term_period
+        total_payment_planned = emi_amount * (term_period - 1)
+        last_emi_amount = total_payment_expected - total_payment_planned
+        
 
         loan_application = LoanApplication.objects.create(
             user=user,
@@ -104,31 +102,26 @@ def apply_loan(request):
         )
         
         due_dates = []
-        total_principal_paid = 0
-        emi_amount=emi
-        for month in range(term_period):
+        for month in range(1, term_period + 1):
             due_date = first_due_date + timedelta(days=30 * month)
-            if month == term_period - 1:  
-                remaining_principal = loan_amount - total_principal_paid
-                emi_amount += remaining_principal  
-
+            amount_due = emi_amount if month < term_period else last_emi_amount
+            
             EMIDetail.objects.create(
                 loan_application=loan_application,
                 date=due_date,
-                amount_due=emi_amount,
-                interest_for_month = monthly_interest_amount
+                amount_due=amount_due,
+                interest_for_month=monthly_interest_amount
             )
             due_dates.append({
                 'Date': due_date.isoformat(),
-                'Amount_due': emi_amount
+                'Amount_due': float(amount_due)
             })
-            total_principal_paid += emi_amount 
-        
+
         return Response({
             'Loan_id': loan_application.loan_id.hex,
             'Due_Dates': due_dates,
-            
         }, status=status.HTTP_200_OK)
+        
     except User.DoesNotExist:
         return Response({'Error': 'User not found.'}, status=status.HTTP_400_BAD_REQUEST)
     except CreditScore.DoesNotExist:
@@ -136,21 +129,7 @@ def apply_loan(request):
     except Exception as e:
         return Response({'Error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
-def recalculate_emi(loan_application, payment_amount):
 
-    total_paid_so_far = sum(payment.amount_paid for payment in loan_application.emi_details.payments.all()) + payment_amount
-
-    new_principal = loan_application.loan_amount - total_paid_so_far
-    
-    original_tenure_months = loan_application.term_period
-    payments_made = loan_application.emi_details.payments.count()
-    remaining_tenure= original_tenure_months - payments_made
-
-    monthly_income = loan_application.user.annual_income / 12
-
-    new_emi, error_message = calculate_emi(new_principal, loan_application.annual_interest_rate, remaining_tenure, monthly_income)
-
-    return new_emi, error_message
 
 @api_view(['POST'])
 def make_payment(request):
